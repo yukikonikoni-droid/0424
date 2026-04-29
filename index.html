@@ -1,0 +1,175 @@
+﻿<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>株価シナリオ分析アプリ</title>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <style>
+    body { font-family: "Segoe UI", sans-serif; margin: 0; background: #f6f8fb; color: #1f2937; }
+    .wrap { max-width: 1100px; margin: 20px auto; padding: 0 16px; }
+    .card { background: #fff; border-radius: 12px; padding: 16px; box-shadow: 0 2px 12px rgba(0,0,0,.06); margin-bottom: 14px; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; }
+    input, button { padding: 10px; border: 1px solid #d1d5db; border-radius: 8px; }
+    button { background: #2563eb; color: #fff; border: none; cursor: pointer; }
+    button:hover { background: #1d4ed8; }
+    .muted { color: #6b7280; font-size: 13px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .scenario { border-left: 5px solid #94a3b8; padding: 10px; background: #f8fafc; border-radius: 8px; }
+    @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h2>翌営業日シナリオ分析（Web公開向け index.html）</h2>
+      <p class="muted">サーバ不要の静的ページです。OHLCV CSVをアップロードして、テクニカル＋簡易ファンダメンタルで5シナリオを算出します。</p>
+      <div class="row">
+        <div>
+          <label>OHLCV CSV（Date,Open,High,Low,Close,Volume）</label><br />
+          <input id="csvFile" type="file" accept=".csv" />
+        </div>
+        <div>
+          <label>PER</label><br />
+          <input id="per" type="number" step="0.1" placeholder="例: 14.2" />
+        </div>
+        <div>
+          <label>PBR</label><br />
+          <input id="pbr" type="number" step="0.01" placeholder="例: 1.35" />
+        </div>
+        <div>
+          <label>ROE (%)</label><br />
+          <input id="roe" type="number" step="0.1" placeholder="例: 10.5" />
+        </div>
+        <div>
+          <label>売上成長率 (%)</label><br />
+          <input id="growth" type="number" step="0.1" placeholder="例: 8.0" />
+        </div>
+        <button id="analyzeBtn">分析する</button>
+      </div>
+      <p class="muted">※ GitHub Pages公開時は、CSVをローカルから選択して分析できます。</p>
+    </div>
+
+    <div class="card"><div id="chart" style="height:420px;"></div></div>
+    <div class="card"><div id="probChart" style="height:320px;"></div></div>
+    <div class="card"><div id="result"></div></div>
+  </div>
+
+<script>
+const colors = { up:'#00b894', pull:'#fdcb6e', range:'#74b9ff', down:'#ef4444', vol:'#7c3aed' };
+
+function sma(arr, n) {
+  return arr.map((_, i) => i + 1 < n ? null : arr.slice(i - n + 1, i + 1).reduce((a,b)=>a+b,0)/n);
+}
+
+function rsi(close, period=14){
+  const out = Array(close.length).fill(null);
+  for(let i=period; i<close.length; i++){
+    let gain=0, loss=0;
+    for(let j=i-period+1;j<=i;j++){
+      const d = close[j]-close[j-1];
+      if(d>0) gain += d; else loss -= d;
+    }
+    const rs = loss===0 ? 100 : gain/loss;
+    out[i] = 100 - (100/(1+rs));
+  }
+  return out;
+}
+
+function parseCSV(text){
+  const lines = text.trim().split(/\r?\n/);
+  const h = lines[0].split(',').map(x=>x.trim().toLowerCase());
+  const idx = (k)=>h.indexOf(k);
+  const di = idx('date'), oi = idx('open'), hi = idx('high'), li = idx('low'), ci = idx('close'), vi = idx('volume');
+  if ([di,oi,hi,li,ci,vi].some(x=>x<0)) throw new Error('CSV列が不足: Date,Open,High,Low,Close,Volume が必要です。');
+  const rows = lines.slice(1).map(l=>l.split(','));
+  const data = rows.map(r=>(
+    {date:r[di], open:+r[oi], high:+r[hi], low:+r[li], close:+r[ci], volume:+r[vi]}
+  )).filter(r=>Number.isFinite(r.close));
+  if(data.length < 20) throw new Error('最低20行以上のデータが必要です。');
+  return data;
+}
+
+function fundamentalTilt(){
+  const per = +document.getElementById('per').value;
+  const pbr = +document.getElementById('pbr').value;
+  const roe = +document.getElementById('roe').value;
+  const growth = +document.getElementById('growth').value;
+  let q = 0, reasons = [];
+  if(Number.isFinite(per)){ if(per<12){ q+=1; reasons.push('PER低め'); } if(per>35){ q-=1; reasons.push('PER高め'); } }
+  if(Number.isFinite(pbr)){ if(pbr<1.2){ q+=0.7; reasons.push('PBR割安寄り'); } if(pbr>4){ q-=0.7; reasons.push('PBR高め'); } }
+  if(Number.isFinite(roe)){ if(roe>12){ q+=0.8; reasons.push('ROE高水準'); } if(roe<5){ q-=0.6; reasons.push('ROE低水準'); } }
+  if(Number.isFinite(growth)){ if(growth>8){ q+=0.8; reasons.push('売上成長プラス'); } if(growth<-3){ q-=0.8; reasons.push('売上成長マイナス'); } }
+  return {q, reasons};
+}
+
+function normalize(scores){
+  const entries = Object.entries(scores);
+  const vals = entries.map(([,v])=>Math.max(v,0.1));
+  const sum = vals.reduce((a,b)=>a+b,0);
+  return Object.fromEntries(entries.map(([k],i)=>[k, +(vals[i]/sum*100).toFixed(1)]));
+}
+
+function analyze(data){
+  const close = data.map(x=>x.close), high = data.map(x=>x.high), low = data.map(x=>x.low), vol = data.map(x=>x.volume);
+  const sma5 = sma(close,5), sma20 = sma(close,20), r = rsi(close,14);
+  const i = close.length - 1;
+  const last = close[i], last20 = sma20[i], last5 = sma5[i], rsiLast = r[i] ?? 50;
+  const ret5 = i>=5 ? (last/close[i-5]-1)*100 : 0;
+  const v20 = vol.slice(-20).reduce((a,b)=>a+b,0)/Math.min(20,vol.length);
+  const vRatio = v20 ? vol[i]/v20 : 1;
+
+  let s = {up:0.4, pull:0.4, range:0.4, down:0.4, vol:0.4};
+  if(last > last20 && rsiLast >= 45 && rsiLast <= 68) s.up += 2.0;
+  if(vRatio > 1.15 && last >= last5) s.up += 0.7;
+  if(ret5 > 3 && rsiLast < 72) s.up += 0.6;
+  if(rsiLast > 70 || (last > last20*1.04 && ret5 > 4)) s.pull += 2.0;
+  if(rsiLast >= 44 && rsiLast <= 56 && Math.abs(last/last20 - 1) < 0.02) s.range += 1.8;
+  if(last < last20 && rsiLast < 45) s.down += 1.8;
+  if(ret5 < -3) s.down += 0.8;
+  const recentRange = ((Math.max(...high.slice(-5))-Math.min(...low.slice(-5)))/last)*100;
+  if(recentRange > 5) s.vol += 1.6;
+
+  const f = fundamentalTilt();
+  if(f.q > 0){ s.up += 0.6 + f.q*0.25; s.down = Math.max(0.2, s.down - 0.3); }
+  if(f.q < 0){ s.down += 0.6 + Math.abs(f.q)*0.25; s.up = Math.max(0.2, s.up - 0.3); }
+
+  const p = normalize(s);
+  const map = [
+    {k:'up', t:'上昇継続', c:colors.up, why:['移動平均の上', `RSI ${rsiLast.toFixed(1)}`, ...f.reasons]},
+    {k:'pull', t:'調整・押し目', c:colors.pull, why:['短期過熱の反動', `5日騰落 ${ret5.toFixed(2)}%`]},
+    {k:'range', t:'横ばい・レンジ', c:colors.range, why:['方向感が中立', '売り買い拮抗']},
+    {k:'down', t:'下落・弱気継続', c:colors.down, why:['移動平均割れ', '弱気モメンタム']},
+    {k:'vol', t:'ボラ拡大', c:colors.vol, why:['値幅拡大', `5日レンジ ${recentRange.toFixed(2)}%`]},
+  ].map(x=>({...x, prob:p[x.k]})).sort((a,b)=>b.prob-a.prob);
+
+  Plotly.newPlot('probChart', [{
+    type:'bar', orientation:'h',
+    y: map.map(x=>x.t).reverse(),
+    x: map.map(x=>x.prob).reverse(),
+    marker:{color: map.map(x=>x.c).reverse()},
+    text: map.map(x=>x.prob+'%').reverse(), textposition:'outside'
+  }], {title:'翌営業日シナリオ確率', margin:{l:130,r:30,t:45,b:35}, xaxis:{title:'確率(%)'}});
+
+  Plotly.newPlot('chart', [{
+    type:'candlestick',
+    x:data.map(x=>x.date), open:data.map(x=>x.open), high:data.map(x=>x.high), low:data.map(x=>x.low), close:data.map(x=>x.close), name:'OHLC'
+  },{
+    type:'scatter', mode:'lines', x:data.map(x=>x.date), y:sma5, name:'SMA5'
+  },{
+    type:'scatter', mode:'lines', x:data.map(x=>x.date), y:sma20, name:'SMA20'
+  }], {title:'株価チャート', xaxis:{rangeslider:{visible:false}}, margin:{t:45}});
+
+  const html = map.map((m,i)=>`<div class="scenario" style="border-left-color:${m.c}"><b>${i+1}. ${m.t} (${m.prob}%)</b><ul>${m.why.map(w=>`<li>${w}</li>`).join('')}</ul></div>`).join('');
+  document.getElementById('result').innerHTML = `<h3>総合判断</h3><div class="grid">${html}</div>`;
+}
+
+document.getElementById('analyzeBtn').addEventListener('click', async ()=>{
+  const file = document.getElementById('csvFile').files[0];
+  if(!file){ alert('CSVを選択してください。'); return; }
+  const text = await file.text();
+  try { analyze(parseCSV(text)); } catch(e){ alert(e.message); }
+});
+</script>
+</body>
+</html>
