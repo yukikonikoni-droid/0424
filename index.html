@@ -6,169 +6,220 @@
   <title>株価シナリオ分析アプリ</title>
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
   <style>
-    body { font-family: "Segoe UI", sans-serif; margin: 0; background: #f6f8fb; color: #1f2937; }
-    .wrap { max-width: 1100px; margin: 20px auto; padding: 0 16px; }
-    .card { background: #fff; border-radius: 12px; padding: 16px; box-shadow: 0 2px 12px rgba(0,0,0,.06); margin-bottom: 14px; }
-    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; }
-    input, button { padding: 10px; border: 1px solid #d1d5db; border-radius: 8px; }
-    button { background: #2563eb; color: #fff; border: none; cursor: pointer; }
-    button:hover { background: #1d4ed8; }
-    .muted { color: #6b7280; font-size: 13px; }
-    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-    .scenario { border-left: 5px solid #94a3b8; padding: 10px; background: #f8fafc; border-radius: 8px; }
-    @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
+    :root { --bg:#f5f7fb; --card:#fff; --text:#1f2937; --muted:#6b7280; --blue:#2563eb; }
+    body { margin:0; font-family:"Segoe UI",sans-serif; background:var(--bg); color:var(--text); }
+    .wrap { max-width:1200px; margin:18px auto; padding:0 14px; }
+    .card { background:var(--card); border-radius:12px; padding:16px; box-shadow:0 2px 12px rgba(0,0,0,.06); margin-bottom:14px; }
+    .row { display:flex; gap:10px; flex-wrap:wrap; align-items:end; }
+    .field { display:flex; flex-direction:column; gap:4px; min-width:140px; }
+    input, select, button { border:1px solid #d1d5db; border-radius:8px; padding:10px; }
+    button { background:var(--blue); color:#fff; border:none; cursor:pointer; }
+    button:hover { background:#1d4ed8; }
+    .muted { color:var(--muted); font-size:13px; }
+    .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    .metrics { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
+    .metric { background:#f8fafc; border:1px solid #e5e7eb; border-radius:10px; padding:10px; }
+    .metric b { display:block; font-size:19px; margin-top:3px; }
+    .scenario-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    .scenario { background:#f8fafc; border-left:5px solid #94a3b8; border-radius:8px; padding:10px; }
+    .pill { display:inline-block; padding:6px 10px; border-radius:999px; background:#e0f2fe; color:#075985; font-weight:600; }
+    .ok { color:#047857; } .warn { color:#b45309; } .err{ color:#b91c1c; }
+    @media (max-width:860px){ .grid2,.scenario-grid,.metrics{ grid-template-columns:1fr; } }
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <div class="card">
-      <h2>翌営業日シナリオ分析（Web公開向け index.html）</h2>
-      <p class="muted">サーバ不要の静的ページです。OHLCV CSVをアップロードして、テクニカル＋簡易ファンダメンタルで5シナリオを算出します。</p>
-      <div class="row">
-        <div>
-          <label>OHLCV CSV（Date,Open,High,Low,Close,Volume）</label><br />
-          <input id="csvFile" type="file" accept=".csv" />
-        </div>
-        <div>
-          <label>PER</label><br />
-          <input id="per" type="number" step="0.1" placeholder="例: 14.2" />
-        </div>
-        <div>
-          <label>PBR</label><br />
-          <input id="pbr" type="number" step="0.01" placeholder="例: 1.35" />
-        </div>
-        <div>
-          <label>ROE (%)</label><br />
-          <input id="roe" type="number" step="0.1" placeholder="例: 10.5" />
-        </div>
-        <div>
-          <label>売上成長率 (%)</label><br />
-          <input id="growth" type="number" step="0.1" placeholder="例: 8.0" />
-        </div>
-        <button id="analyzeBtn">分析する</button>
-      </div>
-      <p class="muted">※ GitHub Pages公開時は、CSVをローカルから選択して分析できます。</p>
+<div class="wrap">
+  <div class="card">
+    <h2>個別銘柄：翌日の値動きシナリオ（テクニカル + ファンダメンタル）</h2>
+    <p class="muted">ティッカー入力で株価データを取得し、5シナリオの確率・根拠・総合判断を表示します。</p>
+    <div class="row">
+      <div class="field" style="min-width:210px;"><label>銘柄コード（Yahoo形式）</label><input id="ticker" value="7203.T" /></div>
+      <div class="field"><label>取得期間</label><select id="period"><option>1mo</option><option selected>3mo</option><option>6mo</option><option>1y</option><option>2y</option></select></div>
+      <div class="field"><label>補助: CSV入力（任意）</label><input id="csvFile" type="file" accept=".csv" /></div>
+      <button id="runBtn">チャート取得・分析</button>
     </div>
-
-    <div class="card"><div id="chart" style="height:420px;"></div></div>
-    <div class="card"><div id="probChart" style="height:320px;"></div></div>
-    <div class="card"><div id="result"></div></div>
+    <p id="status" class="muted">待機中</p>
   </div>
 
+  <div class="card"><div id="priceChart" style="height:560px;"></div></div>
+  <div class="card grid2">
+    <div id="probBar" style="height:360px;"></div>
+    <div id="probPie" style="height:360px;"></div>
+  </div>
+
+  <div class="card">
+    <h3>主要指標（最終日）</h3>
+    <div id="techMetrics" class="metrics"></div>
+    <p id="maLine" class="muted"></p>
+  </div>
+
+  <div class="card">
+    <h3>ファンダメンタル評価（総合判定）</h3>
+    <div id="fundMetrics" class="metrics"></div>
+    <p id="fundStance" class="pill">中立</p>
+    <div class="grid2">
+      <div><h4>ポジティブ要因</h4><ul id="fundPos"></ul></div>
+      <div><h4>ネガティブ要因</h4><ul id="fundNeg"></ul></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>シナリオ別の解説（総合判定）</h3>
+    <p id="topScenario" class="pill"></p>
+    <div id="scenarioGrid" class="scenario-grid"></div>
+  </div>
+</div>
+
 <script>
-const colors = { up:'#00b894', pull:'#fdcb6e', range:'#74b9ff', down:'#ef4444', vol:'#7c3aed' };
+const C = {up:'#00b894', pull:'#fdcb6e', range:'#74b9ff', down:'#ef4444', vol:'#7c3aed'};
+const EL = id => document.getElementById(id);
 
-function sma(arr, n) {
-  return arr.map((_, i) => i + 1 < n ? null : arr.slice(i - n + 1, i + 1).reduce((a,b)=>a+b,0)/n);
-}
-
-function rsi(close, period=14){
-  const out = Array(close.length).fill(null);
-  for(let i=period; i<close.length; i++){
-    let gain=0, loss=0;
-    for(let j=i-period+1;j<=i;j++){
-      const d = close[j]-close[j-1];
-      if(d>0) gain += d; else loss -= d;
-    }
-    const rs = loss===0 ? 100 : gain/loss;
-    out[i] = 100 - (100/(1+rs));
+function mean(a){ return a.length ? a.reduce((x,y)=>x+y,0)/a.length : NaN; }
+function sma(a,n){ return a.map((_,i)=> i+1<n ? null : mean(a.slice(i-n+1,i+1))); }
+function ema(a,n){ const k=2/(n+1); let prev=null; return a.map(v=> (prev = prev===null? v : v*k + prev*(1-k))); }
+function rsi(close, n=14){
+  const out=Array(close.length).fill(null);
+  for(let i=n;i<close.length;i++){
+    let g=0,l=0;
+    for(let j=i-n+1;j<=i;j++){ const d=close[j]-close[j-1]; if(d>0) g+=d; else l-=d; }
+    const rs = l===0 ? 100 : g/l; out[i]=100-(100/(1+rs));
   }
   return out;
 }
+function softmax(obj){ const ks=Object.keys(obj); const vals=ks.map(k=>Math.max(obj[k],0.2)); const s=vals.reduce((a,b)=>a+b,0); return Object.fromEntries(ks.map((k,i)=>[k,+(vals[i]/s*100).toFixed(1)])); }
+function num(v){ const n=Number(v); return Number.isFinite(n)?n:null; }
 
-function parseCSV(text){
-  const lines = text.trim().split(/\r?\n/);
-  const h = lines[0].split(',').map(x=>x.trim().toLowerCase());
-  const idx = (k)=>h.indexOf(k);
-  const di = idx('date'), oi = idx('open'), hi = idx('high'), li = idx('low'), ci = idx('close'), vi = idx('volume');
-  if ([di,oi,hi,li,ci,vi].some(x=>x<0)) throw new Error('CSV列が不足: Date,Open,High,Low,Close,Volume が必要です。');
-  const rows = lines.slice(1).map(l=>l.split(','));
-  const data = rows.map(r=>(
-    {date:r[di], open:+r[oi], high:+r[hi], low:+r[li], close:+r[ci], volume:+r[vi]}
-  )).filter(r=>Number.isFinite(r.close));
-  if(data.length < 20) throw new Error('最低20行以上のデータが必要です。');
-  return data;
+async function fetchJson(url){
+  const proxies = [u=>u, u=>'https://api.allorigins.win/raw?url='+encodeURIComponent(u)];
+  for(const p of proxies){
+    try{ const r=await fetch(p(url)); if(r.ok) return await r.json(); }catch{}
+  }
+  throw new Error('データ取得に失敗しました。ティッカー/ネットワークを確認してください。');
 }
 
-function fundamentalTilt(){
-  const per = +document.getElementById('per').value;
-  const pbr = +document.getElementById('pbr').value;
-  const roe = +document.getElementById('roe').value;
-  const growth = +document.getElementById('growth').value;
-  let q = 0, reasons = [];
-  if(Number.isFinite(per)){ if(per<12){ q+=1; reasons.push('PER低め'); } if(per>35){ q-=1; reasons.push('PER高め'); } }
-  if(Number.isFinite(pbr)){ if(pbr<1.2){ q+=0.7; reasons.push('PBR割安寄り'); } if(pbr>4){ q-=0.7; reasons.push('PBR高め'); } }
-  if(Number.isFinite(roe)){ if(roe>12){ q+=0.8; reasons.push('ROE高水準'); } if(roe<5){ q-=0.6; reasons.push('ROE低水準'); } }
-  if(Number.isFinite(growth)){ if(growth>8){ q+=0.8; reasons.push('売上成長プラス'); } if(growth<-3){ q-=0.8; reasons.push('売上成長マイナス'); } }
-  return {q, reasons};
+async function fetchYahooOHLCV(ticker, period){
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=${period}&interval=1d`;
+  const j = await fetchJson(url);
+  const r = j?.chart?.result?.[0];
+  if(!r) throw new Error('価格データを取得できませんでした。');
+  const q = r.indicators?.quote?.[0];
+  const t = r.timestamp || [];
+  const out = t.map((ts,i)=>({
+    date: new Date(ts*1000).toISOString().slice(0,10),
+    open: num(q.open?.[i]), high:num(q.high?.[i]), low:num(q.low?.[i]), close:num(q.close?.[i]), volume:num(q.volume?.[i])
+  })).filter(x=>x.open!=null && x.high!=null && x.low!=null && x.close!=null);
+  if(out.length<20) throw new Error('データ本数が不足しています（20本未満）。');
+  return out;
 }
 
-function normalize(scores){
-  const entries = Object.entries(scores);
-  const vals = entries.map(([,v])=>Math.max(v,0.1));
-  const sum = vals.reduce((a,b)=>a+b,0);
-  return Object.fromEntries(entries.map(([k],i)=>[k, +(vals[i]/sum*100).toFixed(1)]));
+async function fetchYahooFundamentals(ticker){
+  const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=defaultKeyStatistics,financialData,price,summaryProfile`;
+  try{
+    const j=await fetchJson(url);
+    const d=j?.quoteSummary?.result?.[0]||{};
+    const k=d.defaultKeyStatistics||{}, f=d.financialData||{};
+    return {
+      pe:num(k.trailingPE?.raw ?? f.forwardPE?.raw), pbr:num(k.priceToBook?.raw), roe:num(f.returnOnEquity?.raw),
+      revGrowth:num(f.revenueGrowth?.raw), earnGrowth:num(f.earningsGrowth?.raw), de:num(k.debtToEquity?.raw),
+      current:num(f.currentRatio?.raw), opMargin:num(f.operatingMargins?.raw)
+    };
+  }catch{return {pe:null,pbr:null,roe:null,revGrowth:null,earnGrowth:null,de:null,current:null,opMargin:null};}
 }
 
-function analyze(data){
-  const close = data.map(x=>x.close), high = data.map(x=>x.high), low = data.map(x=>x.low), vol = data.map(x=>x.volume);
-  const sma5 = sma(close,5), sma20 = sma(close,20), r = rsi(close,14);
-  const i = close.length - 1;
-  const last = close[i], last20 = sma20[i], last5 = sma5[i], rsiLast = r[i] ?? 50;
-  const ret5 = i>=5 ? (last/close[i-5]-1)*100 : 0;
-  const v20 = vol.slice(-20).reduce((a,b)=>a+b,0)/Math.min(20,vol.length);
-  const vRatio = v20 ? vol[i]/v20 : 1;
-
-  let s = {up:0.4, pull:0.4, range:0.4, down:0.4, vol:0.4};
-  if(last > last20 && rsiLast >= 45 && rsiLast <= 68) s.up += 2.0;
-  if(vRatio > 1.15 && last >= last5) s.up += 0.7;
-  if(ret5 > 3 && rsiLast < 72) s.up += 0.6;
-  if(rsiLast > 70 || (last > last20*1.04 && ret5 > 4)) s.pull += 2.0;
-  if(rsiLast >= 44 && rsiLast <= 56 && Math.abs(last/last20 - 1) < 0.02) s.range += 1.8;
-  if(last < last20 && rsiLast < 45) s.down += 1.8;
-  if(ret5 < -3) s.down += 0.8;
-  const recentRange = ((Math.max(...high.slice(-5))-Math.min(...low.slice(-5)))/last)*100;
-  if(recentRange > 5) s.vol += 1.6;
-
-  const f = fundamentalTilt();
-  if(f.q > 0){ s.up += 0.6 + f.q*0.25; s.down = Math.max(0.2, s.down - 0.3); }
-  if(f.q < 0){ s.down += 0.6 + Math.abs(f.q)*0.25; s.up = Math.max(0.2, s.up - 0.3); }
-
-  const p = normalize(s);
-  const map = [
-    {k:'up', t:'上昇継続', c:colors.up, why:['移動平均の上', `RSI ${rsiLast.toFixed(1)}`, ...f.reasons]},
-    {k:'pull', t:'調整・押し目', c:colors.pull, why:['短期過熱の反動', `5日騰落 ${ret5.toFixed(2)}%`]},
-    {k:'range', t:'横ばい・レンジ', c:colors.range, why:['方向感が中立', '売り買い拮抗']},
-    {k:'down', t:'下落・弱気継続', c:colors.down, why:['移動平均割れ', '弱気モメンタム']},
-    {k:'vol', t:'ボラ拡大', c:colors.vol, why:['値幅拡大', `5日レンジ ${recentRange.toFixed(2)}%`]},
-  ].map(x=>({...x, prob:p[x.k]})).sort((a,b)=>b.prob-a.prob);
-
-  Plotly.newPlot('probChart', [{
-    type:'bar', orientation:'h',
-    y: map.map(x=>x.t).reverse(),
-    x: map.map(x=>x.prob).reverse(),
-    marker:{color: map.map(x=>x.c).reverse()},
-    text: map.map(x=>x.prob+'%').reverse(), textposition:'outside'
-  }], {title:'翌営業日シナリオ確率', margin:{l:130,r:30,t:45,b:35}, xaxis:{title:'確率(%)'}});
-
-  Plotly.newPlot('chart', [{
-    type:'candlestick',
-    x:data.map(x=>x.date), open:data.map(x=>x.open), high:data.map(x=>x.high), low:data.map(x=>x.low), close:data.map(x=>x.close), name:'OHLC'
-  },{
-    type:'scatter', mode:'lines', x:data.map(x=>x.date), y:sma5, name:'SMA5'
-  },{
-    type:'scatter', mode:'lines', x:data.map(x=>x.date), y:sma20, name:'SMA20'
-  }], {title:'株価チャート', xaxis:{rangeslider:{visible:false}}, margin:{t:45}});
-
-  const html = map.map((m,i)=>`<div class="scenario" style="border-left-color:${m.c}"><b>${i+1}. ${m.t} (${m.prob}%)</b><ul>${m.why.map(w=>`<li>${w}</li>`).join('')}</ul></div>`).join('');
-  document.getElementById('result').innerHTML = `<h3>総合判断</h3><div class="grid">${html}</div>`;
+function parseCsv(text){
+  const lines=text.trim().split(/\r?\n/); const h=lines[0].toLowerCase().split(',').map(s=>s.trim());
+  const id=k=>h.indexOf(k); const di=id('date'),oi=id('open'),hi=id('high'),li=id('low'),ci=id('close'),vi=id('volume');
+  if([di,oi,hi,li,ci,vi].some(x=>x<0)) throw new Error('CSVは Date,Open,High,Low,Close,Volume 列が必要です。');
+  return lines.slice(1).map(l=>l.split(',')).map(r=>({date:r[di],open:num(r[oi]),high:num(r[hi]),low:num(r[li]),close:num(r[ci]),volume:num(r[vi])})).filter(x=>x.close!=null);
 }
 
-document.getElementById('analyzeBtn').addEventListener('click', async ()=>{
-  const file = document.getElementById('csvFile').files[0];
-  if(!file){ alert('CSVを選択してください。'); return; }
-  const text = await file.text();
-  try { analyze(parseCSV(text)); } catch(e){ alert(e.message); }
+function evaluate(data, fund){
+  const close=data.map(x=>x.close), high=data.map(x=>x.high), low=data.map(x=>x.low), vol=data.map(x=>x.volume||0);
+  const s5=sma(close,5), s20=sma(close,20), s60=sma(close,60), s30=sma(close,30), r=rsi(close,14), e12=ema(close,12), e26=ema(close,26);
+  const macd=e12.map((v,i)=>v-e26[i]), sig=ema(macd,9), hist=macd.map((v,i)=>v-sig[i]);
+  const i=close.length-1, last=close[i], sma20=s20[i], long=(s60[i]??s30[i]), longName=s60[i]!=null?'SMA60':'SMA30';
+  const ret5=i>=5 ? (last/close[i-5]-1)*100 : 0, rsiLast=r[i]??50, v20=mean(vol.slice(-20)), vRatio=v20?vol[i]/v20:1;
+  const recentRange=((Math.max(...high.slice(-5))-Math.min(...low.slice(-5)))/last)*100;
+
+  let sc={up:0.35,pull:0.35,range:0.35,down:0.35,vol:0.35};
+  if(last>sma20 && sma20>long && rsiLast>=45 && rsiLast<=68) sc.up+=2.2;
+  if(last>sma20 && hist[i]>0 && hist[i]>hist[i-1]) sc.up+=1.3;
+  if(vRatio>1.15) sc.up+=0.7;
+  if(rsiLast>70 || (last>sma20*1.04 && ret5>4)) sc.pull+=2.0;
+  if(rsiLast>=44 && rsiLast<=56 && Math.abs(last/sma20-1)<0.02) sc.range+=2.0;
+  if(last<sma20 && sma20<long && rsiLast<52) sc.down+=2.2;
+  if(hist[i]<0) sc.down+=1.0;
+  if(recentRange>5) sc.vol+=1.8;
+
+  let bull=0,bear=0,pos=[],neg=[];
+  if(fund.pe!=null){ if(fund.pe<12){bull+=1.2;pos.push(`PER ${fund.pe.toFixed(1)}（割安寄り）`);} else if(fund.pe>35){bear+=1.2;neg.push(`PER ${fund.pe.toFixed(1)}（割高警戒）`);} }
+  if(fund.pbr!=null){ if(fund.pbr<1.2){bull+=0.8;pos.push(`PBR ${fund.pbr.toFixed(2)}（低め）`);} else if(fund.pbr>4){bear+=0.8;neg.push(`PBR ${fund.pbr.toFixed(2)}（高め）`);} }
+  if(fund.roe!=null){ if(fund.roe>0.12){bull+=1.0;pos.push(`ROE ${(fund.roe*100).toFixed(1)}%（高水準）`);} else if(fund.roe<0.05){bear+=0.7;neg.push(`ROE ${(fund.roe*100).toFixed(1)}%（低水準）`);} }
+  if(fund.revGrowth!=null){ if(fund.revGrowth>0.08){bull+=1.0;pos.push(`売上成長 ${(fund.revGrowth*100).toFixed(1)}%`);} else if(fund.revGrowth<-0.03){bear+=1.0;neg.push(`売上成長 ${(fund.revGrowth*100).toFixed(1)}%`);} }
+  const q=bull-bear;
+  if(q>0){ sc.up += 0.6 + Math.min(q,3)*0.35; sc.down=Math.max(0.15, sc.down-0.4); }
+  if(q<0){ sc.down += 0.6 + Math.min(Math.abs(q),3)*0.35; sc.up=Math.max(0.15, sc.up-0.4); }
+
+  const p=softmax(sc);
+  const scenarios=[
+    {k:'up',title:'上昇継続（トレンドフォロー）',summary:'移動平均上で推移し高値更新を試す想定。',prob:p.up,color:C.up,reasons:[`RSI ${rsiLast.toFixed(1)}`,'上向き配置','出来高推移', ...(q>0?['ファンダが下支え']:[])]},
+    {k:'pull',title:'調整・押し目',summary:'短期過熱の解消で小反落しやすい想定。',prob:p.pull,color:C.pull,reasons:[`5日騰落 ${ret5.toFixed(2)}%`,'利確圧力']},
+    {k:'range',title:'横ばい・レンジ',summary:'方向感なく前日終値近辺の推移を想定。',prob:p.range,color:C.range,reasons:['中立オシレーター','売り買い拮抗']},
+    {k:'down',title:'下落・弱気継続',summary:'戻り売り優勢で安値更新を試す想定。',prob:p.down,color:C.down,reasons:['弱気モメンタム','移動平均下', ...(q<0?['ファンダの弱さ']:[])]},
+    {k:'vol',title:'ボラ拡大・終値不確実',summary:'上下動は大きいが終値方向が読みにくい想定。',prob:p.vol,color:C.vol,reasons:[`5日レンジ ${recentRange.toFixed(2)}%`,'不安定相場']}
+  ].sort((a,b)=>b.prob-a.prob);
+
+  return {scenarios, ctx:{last,rsiLast,ret5,vRatio,sma5:s5[i],sma20,long,longName,bull:last>sma20&&sma20>long,bear:last<sma20&&sma20<long}, fundEval:{q,pos,neg,metrics:fund}};
+}
+
+function render(data, res, ticker){
+  const {scenarios,ctx,fundEval}=res;
+  Plotly.newPlot('priceChart',[
+    {type:'candlestick',x:data.map(x=>x.date),open:data.map(x=>x.open),high:data.map(x=>x.high),low:data.map(x=>x.low),close:data.map(x=>x.close),name:'OHLC'},
+    {type:'scatter',mode:'lines',x:data.map(x=>x.date),y:sma(data.map(x=>x.close),5),name:'SMA5',line:{width:1,color:'#ff9800'}},
+    {type:'scatter',mode:'lines',x:data.map(x=>x.date),y:sma(data.map(x=>x.close),20),name:'SMA20',line:{width:1,color:'#2196f3'}},
+    {type:'bar',x:data.map(x=>x.date),y:data.map(x=>x.volume),name:'Volume',yaxis:'y2',opacity:0.25,marker:{color:'#94a3b8'}}
+  ],{title:`${ticker} 価格・出来高`,xaxis:{rangeslider:{visible:false}},yaxis:{title:'価格'},yaxis2:{title:'出来高',overlaying:'y',side:'right',showgrid:false},legend:{orientation:'h'},margin:{t:50}});
+
+  Plotly.newPlot('probBar',[{type:'bar',orientation:'h',y:scenarios.map(s=>s.title).reverse(),x:scenarios.map(s=>s.prob).reverse(),marker:{color:scenarios.map(s=>s.color).reverse()},text:scenarios.map(s=>`${s.prob}%`).reverse(),textposition:'outside'}],{title:'シナリオ別確率（高い順）',xaxis:{title:'確率(%)'},margin:{l:170,r:24,t:48,b:30}});
+  Plotly.newPlot('probPie',[{type:'pie',labels:scenarios.map(s=>s.title),values:scenarios.map(s=>s.prob),hole:.55,marker:{colors:scenarios.map(s=>s.color)},textinfo:'label+percent'}],{title:'シナリオ構成比',margin:{t:48,b:20,l:8,r:8}});
+
+  EL('techMetrics').innerHTML = [
+    ['終値',ctx.last.toFixed(2)],['RSI(14)',ctx.rsiLast.toFixed(1)],['5日リターン',ctx.ret5.toFixed(2)+'%'],['出来高/20日平均',ctx.vRatio.toFixed(2)+'x']
+  ].map(m=>`<div class="metric"><div>${m[0]}</div><b>${m[1]}</b></div>`).join('');
+  EL('maLine').innerText = `移動平均: SMA5=${ctx.sma5?.toFixed(2)} / SMA20=${ctx.sma20?.toFixed(2)} / ${ctx.longName}=${ctx.long?.toFixed(2)} | 多頭配列: ${ctx.bull?'はい':'いいえ'} | 空頭配列: ${ctx.bear?'はい':'いいえ'}`;
+
+  const fm=fundEval.metrics;
+  EL('fundMetrics').innerHTML = [
+    ['PER', fm.pe==null?'-':fm.pe.toFixed(1)], ['PBR', fm.pbr==null?'-':fm.pbr.toFixed(2)],
+    ['ROE', fm.roe==null?'-':(fm.roe*100).toFixed(1)+'%'], ['売上成長率', fm.revGrowth==null?'-':(fm.revGrowth*100).toFixed(1)+'%']
+  ].map(m=>`<div class="metric"><div>${m[0]}</div><b>${m[1]}</b></div>`).join('');
+  const stance = fundEval.q>1.5?'やや強気':fundEval.q<-1.5?'やや弱気':'中立';
+  EL('fundStance').textContent = `ファンダメンタル総合スタンス: ${stance}（スコア ${fundEval.q>=0?'+':''}${fundEval.q.toFixed(2)}）`;
+  EL('fundPos').innerHTML = (fundEval.pos.length?fundEval.pos:['明確な上振れ要因は限定的']).map(x=>`<li>${x}</li>`).join('');
+  EL('fundNeg').innerHTML = (fundEval.neg.length?fundEval.neg:['明確な下押し要因は限定的']).map(x=>`<li>${x}</li>`).join('');
+
+  const top=scenarios[0]; EL('topScenario').textContent = `最有力シナリオ: ${top.title}（${top.prob}%）`;
+  EL('scenarioGrid').innerHTML = scenarios.map((s,i)=>`<div class="scenario" style="border-left-color:${s.color}"><h4>${i+1}. ${s.title} - ${s.prob}%</h4><p>${s.summary}</p><ul>${s.reasons.map(r=>`<li>${r}</li>`).join('')}</ul></div>`).join('');
+}
+
+EL('runBtn').addEventListener('click', async ()=>{
+  const ticker = EL('ticker').value.trim().toUpperCase();
+  const period = EL('period').value;
+  const file = EL('csvFile').files[0];
+  if(!ticker && !file){ alert('ティッカーまたはCSVを指定してください。'); return; }
+  EL('status').textContent='データ取得中...'; EL('status').className='muted';
+  try{
+    let data;
+    if(file){ data = parseCsv(await file.text()); }
+    else { data = await fetchYahooOHLCV(ticker, period); }
+    const fund = ticker ? await fetchYahooFundamentals(ticker) : {pe:null,pbr:null,roe:null,revGrowth:null};
+    const res = evaluate(data, fund);
+    render(data, res, ticker || 'CSVデータ');
+    EL('status').textContent='分析完了'; EL('status').className='ok';
+  }catch(e){
+    EL('status').textContent = `エラー: ${e.message}`; EL('status').className='err';
+  }
 });
 </script>
 </body>
